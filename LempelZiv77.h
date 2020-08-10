@@ -151,7 +151,7 @@ class LZWcompression
                 continue;
             }
             pos2 = pos;
-            pc = 255;
+            pc = 256;
             if(pc > dataSize)
             {
                 pc = dataSize;
@@ -180,16 +180,100 @@ class LZWcompression
         return (unsigned char*)compressed;
     }
 
+    static void compressFile(char* inputFile, char* outputFile, size_t* returnCompressedSize)
+    {
+        FILE* input = fopen(inputFile, "rb");
+        FILE* output = fopen(outputFile, "wb");
+        fseek(input, 0, SEEK_END);
+        long size = ftell(input);
+        fseek(input, 0, SEEK_SET);
+        char* buffer = (char*)malloc(256);
+        unsigned char* result = 0;
+        size_t resultSize = 0;
+        long p = 0;
+        
+        while (p < size)
+        {
+            if(size - p < 256)
+            {
+                p += fread(buffer, 1, size - p, input);
+                result = compress(buffer, size - p, &resultSize);
+            }
+            else
+            {
+                p += fread(buffer, 1, 256, input);
+                result = compress(buffer, 256, &resultSize);
+            }
+            if(result != 0 && resultSize > 0)
+            {
+                fwrite(result, 1, resultSize, output);
+                free(result);
+            }
+        }
+        free(buffer);
+        fclose(input);
+        fclose(output);
+    }
+
+    static void decompressFile(char* inputFile, char* outputFile, size_t* returnCompressedSize)
+    {
+        FILE* input = fopen(inputFile, "rb");
+        FILE* output = fopen(outputFile, "wb");
+        fseek(input, 0, SEEK_END);
+        long size = ftell(input);
+        fseek(input, 0, SEEK_SET);
+        char* buffer = (char*)malloc(256);
+        unsigned char* result = 0;
+        size_t resultSize = 0;
+        long p = 0;
+        while (p < size)
+        {
+            if(size - p < 256)
+            {
+                p += fread(buffer, 1, size - p, input);
+                result = (unsigned char*)decompress((unsigned char*)buffer, size - p, &resultSize);
+            }
+            else
+            {
+                p += fread(buffer, 1, 256, input);
+                result = (unsigned char*)decompress((unsigned char*)buffer, 256, &resultSize);
+            }
+            if(result != 0 && resultSize > 0)
+            {
+                fwrite(result, 1, resultSize, output);
+                free(result);
+            }
+        }
+        free(buffer);
+        fclose(input);
+        fclose(output);
+    }
+
     static char* decompress(unsigned char* data, size_t dataSize, size_t* returnSize)
     {
 
-        char* result = (char*)calloc(dataSize*2, 1);
+        char* result = (char*)calloc(dataSize*3, 1);
+        size_t resSZ = dataSize*3;
         int rc = 0;
         unsigned char l = 0;
         unsigned char p = 0;
         unsigned char c = 0;
-        for(int i = 0; i < dataSize; i+=2)
+        for(int i = 0; i+1 < dataSize; i+=2)
         {
+            if( rc + dataSize >= resSZ)
+            {
+                char* tmpa = (char*)realloc(result, resSZ+dataSize);
+                if(tmpa != NULL)
+                {
+                    result = tmpa;
+                    resSZ += dataSize;
+                }
+                else
+                {
+                    printf("Allocation error!");
+                }
+            }
+
             if(data[i+1] == 0)
             {
                 result[rc] = data[i];
@@ -199,12 +283,29 @@ class LZWcompression
             {
                 p = data[i];
                 l = data[i+1];
+                if( rc + dataSize + l >= resSZ)
+                {
+                    char* tmpa = (char*)realloc(result, resSZ+dataSize);
+                    if(tmpa != NULL)
+                    {
+                        result = tmpa;
+                        resSZ += dataSize + l;
+                    }
+                    else
+                    {
+                        printf("Allocation error!");
+                    }
+                }
                 for(c=0; c < l; c++)
                 {
-                    result[rc] = result[p+c];
+                    result[rc] = result[rc+p+c];
                     rc++;
                 }
             }
+        }
+        if(resSZ > rc)
+        {
+            result = (char*)realloc(result, rc);
         }
         *returnSize = rc;
         return result;
